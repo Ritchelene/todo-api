@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Todo App</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="container">
+    <div class="header">
+      <h1>My Tasks</h1>
+      <div id="health-badge" class="status-badge">
+        <span class="status-dot"></span>
+        <span id="health-text">Checking API...</span>
+      </div>
+    </div>
+
+    <form id="todo-form" class="todo-form">
+      <input 
+        type="text" 
+        id="todo-input" 
+        class="todo-input" 
+        placeholder="What needs to be done?" 
+        required 
+      />
+      <button type="submit" class="btn">Add Task</button>
+    </form>
+
+    <ul id="todo-list" class="todo-list">
+      <div class="empty-state">Loading tasks...</div>
+    </ul>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
