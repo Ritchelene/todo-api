@@ -1,6 +1,5 @@
 const CONFIG = {
-  BASE_URL: 'https://apitest.enricodelarosa.tech',
-  TOKEN: 'c5babade4aa6b3dc4440b5a6e4da97ce016187ae0f597aace124da323ad3571a'
+  BASE_URL: 'http://localhost:3000'
 };
 
 const elements = {
@@ -16,7 +15,10 @@ const elements = {
 function showToast(message) {
   elements.toast.textContent = message;
   elements.toast.classList.add('show');
-  setTimeout(() => elements.toast.classList.remove('show'), 3000);
+
+  setTimeout(() => {
+    elements.toast.classList.remove('show');
+  }, 3000);
 }
 
 // Helper: Unified fetch handler for API calls
@@ -26,42 +28,43 @@ async function apiRequest(endpoint, options = {}) {
     ...options.headers
   };
 
-  if (!options.isPublic) {
-    headers['Authorization'] = `Bearer ${CONFIG.TOKEN}`;
-  }
-
   try {
     const response = await fetch(`${CONFIG.BASE_URL}${endpoint}`, {
       ...options,
       headers
     });
 
-    // 204 No Content (e.g. DELETE success)
+    // 204 No Content
     if (response.status === 204) return null;
 
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      throw new Error(data.message || `Error ${response.status}: Action failed`);
+      throw new Error(
+        data.error || data.message || `Error ${response.status}: Action failed`
+      );
     }
 
     return data;
+
   } catch (err) {
     showToast(err.message);
     throw err;
   }
 }
 
-// Check API Health Status
+// Check Backend + Database Health
 async function checkHealth() {
   try {
-    const res = await apiRequest('/health', { isPublic: true });
-    if (res && res.ok) {
+    const res = await apiRequest('/health');
+
+    if (res && res.status === 'ok' && res.database === 'connected') {
       elements.healthBadge.className = 'status-badge online';
       elements.healthText.textContent = 'API Online';
     } else {
-      throw new Error();
+      throw new Error('Backend or database is unavailable');
     }
+
   } catch {
     elements.healthBadge.className = 'status-badge offline';
     elements.healthText.textContent = 'API Offline';
@@ -74,20 +77,24 @@ async function fetchTodos() {
     const todos = await apiRequest('/todos');
     renderTodos(todos);
   } catch (err) {
-    elements.list.innerHTML = `<div class="empty-state">Failed to load tasks.</div>`;
+    elements.list.innerHTML =
+      `<div class="empty-state">Failed to load tasks.</div>`;
   }
 }
 
 // Render Todos UI
 function renderTodos(todos) {
   if (!todos || todos.length === 0) {
-    elements.list.innerHTML = `<div class="empty-state">No tasks available. Add one above!</div>`;
+    elements.list.innerHTML =
+      `<div class="empty-state">No tasks available. Add one above!</div>`;
     return;
   }
 
   elements.list.innerHTML = '';
+
   todos.forEach(todo => {
     const li = document.createElement('li');
+
     li.className = 'todo-item';
     li.dataset.id = todo.id;
 
@@ -99,13 +106,27 @@ function renderTodos(todos) {
           ${todo.completed ? 'checked' : ''} 
           onchange="toggleTodo(${todo.id}, this.checked)"
         />
-        <span class="todo-title ${todo.completed ? 'completed' : ''}">${escapeHtml(todo.title)}</span>
+
+        <span class="todo-title ${todo.completed ? 'completed' : ''}">
+          ${escapeHtml(todo.title)}
+        </span>
       </div>
+
       <div class="actions">
-        <button class="btn btn-secondary" onclick="enableEdit(${todo.id}, '${escapeHtml(todo.title)}')">Edit</button>
-        <button class="btn btn-danger" onclick="deleteTodo(${todo.id})">Delete</button>
+        <button 
+          class="btn btn-secondary" 
+          onclick="enableEdit(${todo.id}, '${escapeHtml(todo.title)}')">
+          Edit
+        </button>
+
+        <button 
+          class="btn btn-danger" 
+          onclick="deleteTodo(${todo.id})">
+          Delete
+        </button>
       </div>
     `;
+
     elements.list.appendChild(li);
   });
 }
@@ -113,7 +134,9 @@ function renderTodos(todos) {
 // Add New Todo
 elements.form.addEventListener('submit', async (e) => {
   e.preventDefault();
+
   const title = elements.input.value.trim();
+
   if (!title) return;
 
   try {
@@ -121,64 +144,112 @@ elements.form.addEventListener('submit', async (e) => {
       method: 'POST',
       body: JSON.stringify({ title })
     });
+
     elements.input.value = '';
-    fetchTodos();
-  } catch (err) {}
+    await fetchTodos();
+
+  } catch (err) {
+    // Error is already handled by apiRequest()
+  }
 });
 
 // Toggle Completed Status
 async function toggleTodo(id, completed) {
   try {
+    // Get current todo first so we don't accidentally remove its title
+    const todos = await apiRequest('/todos');
+    const todo = todos.find(item => item.id === id);
+
+    if (!todo) return;
+
     await apiRequest(`/todos/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({ completed })
+      body: JSON.stringify({
+        title: todo.title,
+        completed: completed
+      })
     });
-    fetchTodos();
+
+    await fetchTodos();
+
   } catch (err) {
-    fetchTodos(); // Reset UI state on failure
+    await fetchTodos();
   }
 }
 
 // Enable Inline Edit
 function enableEdit(id, currentTitle) {
   const item = document.querySelector(`[data-id="${id}"]`);
+
   if (!item) return;
 
   item.innerHTML = `
     <div class="todo-content">
-      <input type="text" class="edit-input" value="${currentTitle}" id="edit-input-${id}" />
+      <input 
+        type="text" 
+        class="edit-input" 
+        value="${currentTitle}" 
+        id="edit-input-${id}" 
+      />
     </div>
+
     <div class="actions">
-      <button class="btn" onclick="saveEdit(${id})">Save</button>
-      <button class="btn btn-secondary" onclick="fetchTodos()">Cancel</button>
+      <button class="btn" onclick="saveEdit(${id})">
+        Save
+      </button>
+
+      <button class="btn btn-secondary" onclick="fetchTodos()">
+        Cancel
+      </button>
     </div>
   `;
 
   const input = document.getElementById(`edit-input-${id}`);
+
   input.focus();
+
   input.addEventListener('keyup', (e) => {
-    if (e.key === 'Enter') saveEdit(id);
-    if (e.key === 'Escape') fetchTodos();
+    if (e.key === 'Enter') {
+      saveEdit(id);
+    }
+
+    if (e.key === 'Escape') {
+      fetchTodos();
+    }
   });
 }
 
 // Save Edited Title
 async function saveEdit(id) {
   const input = document.getElementById(`edit-input-${id}`);
+
   const newTitle = input.value.trim();
 
   if (!newTitle) {
-    showToast("Title cannot be empty");
+    showToast('Title cannot be empty');
     return;
   }
 
   try {
+    // Get current todo so we preserve its completed status
+    const todos = await apiRequest('/todos');
+    const todo = todos.find(item => item.id === id);
+
+    if (!todo) return;
+
     await apiRequest(`/todos/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({ title: newTitle })
+      body: JSON.stringify({
+        title: newTitle,
+        completed: Boolean(todo.completed)
+      })
     });
-    fetchTodos();
-  } catch (err) {}
+
+    await fetchTodos();
+
+  } catch (err) {
+    // Error is already handled by apiRequest()
+  }
 }
 
 // Delete Todo
@@ -187,8 +258,12 @@ async function deleteTodo(id) {
     await apiRequest(`/todos/${id}`, {
       method: 'DELETE'
     });
-    fetchTodos();
-  } catch (err) {}
+
+    await fetchTodos();
+
+  } catch (err) {
+    // Error is already handled by apiRequest()
+  }
 }
 
 // Sanitize string helper
